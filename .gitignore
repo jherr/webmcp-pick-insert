@@ -11,3 +11,7 @@ dist-ssr
 .vinxi
 __unconfig*
 todos.json
+tailwindcss-*.log
+
+# Local Netlify folder
+.netlify
