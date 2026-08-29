@@ -7,9 +7,9 @@
  * float32 triangles back together and hoping the seams line up.
  *
  * Read a line at a time rather than as one token stream, because a face may
- * carry a trailing colour — the WASM build writes `3 340 342 343 157 203 81`
+ * carry a trailing color — the WASM build writes `3 340 342 343 157 203 81`
  * where the desktop build writes `3 340 342 343` — and there is no telling a
- * colour component from the next face's corner count without the line breaks.
+ * color component from the next face's corner count without the line breaks.
  * Every writer puts one element on one line; the format permits wrapping, but
  * OpenSCAD has no reason to and does not.
  */

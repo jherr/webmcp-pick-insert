@@ -259,3 +259,28 @@ a {
   }
 }
 
+.color-picker .react-colorful {
+  width: 220px;
+  height: 168px;
+}
+
+.color-picker .react-colorful__saturation {
+  border-radius: 8px;
+}
+
+.color-picker .react-colorful__hue {
+  height: 12px;
+  margin-top: 10px;
+  border-radius: 999px;
+}
+
+.color-picker .react-colorful__last-control {
+  border-radius: 999px;
+}
+
+.color-picker .react-colorful__pointer {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+

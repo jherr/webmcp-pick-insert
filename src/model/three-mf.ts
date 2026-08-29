@@ -1,5 +1,5 @@
 /**
- * Minimal 3MF writer: several meshes, each its own colour, in one file.
+ * Minimal 3MF writer: several meshes, each its own color, in one file.
  *
  * Why hand-rolled rather than `openscad -o out.3mf`: the WASM builds are
  * compiled without the 3MF exporter (they answer "Export to 3MF format was
@@ -28,7 +28,7 @@ import type { IndexedMesh } from './off-mesh'
 export type ThreeMfPart = {
   name: string
   /** `#rrggbb`; alpha is added for the 3MF's `#rrggbbaa`. */
-  colour: string
+  color: string
   mesh: IndexedMesh
 }
 
@@ -69,10 +69,10 @@ function formatCoord(value: number): string {
   return text === '-0' ? '0' : text
 }
 
-function normaliseColour(colour: string): string {
-  const hex = colour.trim().replace(/^#/, '')
+function normalizeColor(color: string): string {
+  const hex = color.trim().replace(/^#/, '')
   if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-    throw new Error(`expected a #rrggbb colour, got ${colour}`)
+    throw new Error(`expected a #rrggbb color, got ${color}`)
   }
   return `#${hex.toUpperCase()}FF`
 }
@@ -113,7 +113,7 @@ function modelXml(parts: ThreeMfPart[], title: string): string {
   out.push(`  <basematerials id="${materialsId}">\n`)
   for (const part of parts) {
     out.push(
-      `   <base name="${escapeXml(part.name)}" displaycolor="${normaliseColour(part.colour)}"/>\n`,
+      `   <base name="${escapeXml(part.name)}" displaycolor="${normalizeColor(part.color)}"/>\n`,
     )
   }
   out.push('  </basematerials>\n')

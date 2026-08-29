@@ -1,8 +1,8 @@
 /**
  * WebMCP tools for the Altoids pick insert configurator.
  *
- * Domain-shaped surface: list pick types, edit the slot list, render, export.
- * The SCAD source itself is not editable — only the slots array is.
+ * Domain-shaped surface: list pick types, edit the slot list and the part
+ * colors, render, export. The SCAD source itself is not editable.
  */
 import {
   designActions,
@@ -10,7 +10,16 @@ import {
   sanitizeProjectFileName,
   summarizeSlots as summarizeSlotsText,
 } from '@/store/design-store'
-import { renderNow, renderThreeMf } from '@/store/render-controller'
+import {
+  renderInsertStl,
+  renderNow,
+  renderThreeMf,
+} from '@/store/render-controller'
+import {
+  COLOR_PARTS,
+  parseHexColor,
+  type PartColors,
+} from '@/model/colors'
 import {
   MAX_SLOTS,
   MAX_THICKNESS,
@@ -41,6 +50,7 @@ function designSnapshot() {
   return {
     projectName: state.projectName,
     slots: summarizeSlots(state.slots),
+    colors: state.colors,
     render: summarizeRender(state.render, state.fit),
   }
 }
@@ -48,7 +58,7 @@ function designSnapshot() {
 const get_design: ToolDefinition = {
   name: 'get_design',
   description:
-    'Return the current Altoids pick insert design: slots (shape + thickness), project name, render status, and fit report.',
+    'Return the current Altoids pick insert design: slots (shape + thickness), part colors, project name, render status, and fit report.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -256,10 +266,64 @@ const set_all_thickness: ToolDefinition = {
   },
 }
 
+const colorSchema = {
+  type: 'string',
+  description: 'Hex color such as "#2a5f7a"; the leading "#" is optional',
+  pattern: '^#?[0-9a-fA-F]{6}$',
+}
+
+const set_colors: ToolDefinition = {
+  name: 'set_colors',
+  description:
+    'Set the tray, comb, and/or pick color. Tray and comb are the two filaments the exported 3MF asks the slicer for; the pick color is preview-only, since the picks are never exported. Colors do not affect geometry, so this repaints without re-rendering.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tray: colorSchema,
+      comb: colorSchema,
+      picks: colorSchema,
+    },
+    additionalProperties: false,
+  },
+  async execute(args) {
+    const a = asObject(args)
+    const patch: Partial<PartColors> = {}
+    for (const { part } of COLOR_PARTS) {
+      if (a[part] === undefined) continue
+      const hex = parseHexColor(a[part])
+      if (!hex) {
+        return err(
+          `${part}: expected a hex color like "#2a5f7a", got ${JSON.stringify(a[part])}`,
+        )
+      }
+      patch[part] = hex
+    }
+    if (Object.keys(patch).length === 0) {
+      return err('set at least one of tray, comb, picks')
+    }
+    designActions.setColors(patch)
+    return ok({ ok: true, ...designSnapshot() })
+  },
+}
+
+const reset_colors: ToolDefinition = {
+  name: 'reset_colors',
+  description: 'Restore the default tray, comb, and pick colors.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  },
+  async execute() {
+    designActions.resetColors()
+    return ok({ ok: true, ...designSnapshot() })
+  },
+}
+
 const reset_design: ToolDefinition = {
   name: 'reset_design',
   description:
-    'Reset slots to the default nine teardrop picks at 1.5mm.',
+    'Reset the whole design: the default nine teardrop picks at 1.5mm, and the default colors.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -311,14 +375,10 @@ const get_render_status: ToolDefinition = {
 const export_stl: ToolDefinition = {
   name: 'export_stl',
   description:
-    'Return the STL as base64. This is always the insert alone, with no preview geometry, so the file is printable. Optionally truncate the base64 for inspection.',
+    'Return the printable one-piece STL as base64: the tray and the comb unioned into a single solid, with no preview geometry. Rendered fresh on every call, because the mesh on screen is the two halves held apart for coloring. A plain STL carries no color — use export_3mf for the two-filament file. Optionally truncate the base64 for inspection.',
   inputSchema: {
     type: 'object',
     properties: {
-      forceRender: {
-        type: 'boolean',
-        description: 'Always re-render before exporting (default true)',
-      },
       truncateBase64: {
         type: 'integer',
         description: 'If set, only return this many base64 characters',
@@ -329,19 +389,15 @@ const export_stl: ToolDefinition = {
   },
   async execute(args) {
     const a = asObject(args)
-    const forceRender = a.forceRender !== false
-    if (forceRender || designStore.state.render.status !== 'success') {
-      const outcome = await renderNow()
-      if (!outcome.ok) {
-        return err(
-          outcome.message === 'superseded'
-            ? 'export render was superseded'
-            : outcome.message,
-        )
-      }
+    const outcome = await renderInsertStl()
+    if (!outcome.ok) {
+      return err(
+        outcome.message === 'superseded'
+          ? 'export render was superseded'
+          : outcome.message,
+      )
     }
-    const stl = designStore.state.render.stl
-    if (!stl) return err('no STL available')
+    const stl = outcome.bytes
     const projectName =
       designStore.state.projectName || 'altoids-pick-insert'
     const fileName = `${sanitizeProjectFileName(projectName)}.stl`
@@ -369,7 +425,7 @@ const export_stl: ToolDefinition = {
 const export_3mf: ToolDefinition = {
   name: 'export_3mf',
   description:
-    'Return the two-colour 3MF as base64: the slotted comb and the surrounding tray as two separate objects in one file, so a slicer can print each in a different filament. Rendered fresh on every call.',
+    'Return the two-color 3MF as base64: the slotted comb and the surrounding tray as two separate objects in one file, so a slicer can print each in a different filament. Rendered fresh on every call.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -488,6 +544,8 @@ export const tools: ToolDefinition[] = [
   remove_slot,
   update_slot,
   set_all_thickness,
+  set_colors,
+  reset_colors,
   reset_design,
   render,
   get_render_status,

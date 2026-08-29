@@ -70,7 +70,12 @@ export function summarizeRender(render: RenderState, fit: FitReport | null) {
   return {
     status: render.status,
     requestId: render.requestId,
-    byteLength: render.stl ? render.stl.byteLength : null,
+    // The tray and the comb are the whole insert between them, so their sum is
+    // the size of the model on screen.
+    byteLength:
+      render.trayStl && render.combStl
+        ? render.trayStl.byteLength + render.combStl.byteLength
+        : null,
     renderMs: render.renderMs,
     error: render.error,
     fit: fit

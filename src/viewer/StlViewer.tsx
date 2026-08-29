@@ -1,3 +1,12 @@
+/**
+ * Three.js preview of the insert: tray, comb, and the pick overlay.
+ *
+ * The tray and comb arrive as two meshes rather than one so each can take its
+ * own color, which is the whole point — those two colors are the two
+ * filaments the 3MF asks the slicer for. They share coincident faces and no
+ * volume, and the faces they share point away from each other, so back-face
+ * culling settles every one of them and there is nothing to z-fight over.
+ */
 import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
@@ -5,6 +14,7 @@ import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { useSelector } from '@tanstack/react-store'
 import { designStore } from '@/store/design-store'
+import type { PartColors } from '@/model/colors'
 
 function parseStl(bytes: Uint8Array): THREE.BufferGeometry {
   const loader = new STLLoader()
@@ -38,8 +48,9 @@ type Bounds = {
 }
 
 /**
- * Framing comes from the insert alone, never the picks, so toggling the pick
- * overlay does not shunt the camera around.
+ * Framing comes from the tray alone — it is the outer shell, so it bounds
+ * everything else, and using it means neither the comb nor the pick overlay
+ * can shunt the camera around as the design changes.
  */
 function computeBounds(geometry: THREE.BufferGeometry): Bounds {
   geometry.computeBoundingBox()
@@ -75,43 +86,19 @@ function FitCamera({ bounds }: { bounds: Bounds | null }) {
 }
 
 function Insert({
-  geometry,
+  trayGeometry,
+  combGeometry,
   picksGeometry,
   bounds,
+  colors,
 }: {
-  geometry: THREE.BufferGeometry
+  trayGeometry: THREE.BufferGeometry
+  combGeometry: THREE.BufferGeometry | null
   picksGeometry: THREE.BufferGeometry | null
   bounds: Bounds
+  colors: PartColors
 }) {
-  const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#4fb8b2',
-        metalness: 0.05,
-        roughness: 0.45,
-        flatShading: true,
-      }),
-    [],
-  )
-  // The picks are a separate render overlaid on the insert: warm and
-  // see-through so it is obvious which mesh is the thing you print.
-  const picksMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#ffb35c',
-        metalness: 0,
-        roughness: 0.35,
-        flatShading: true,
-        transparent: true,
-        opacity: 0.45,
-        depthWrite: false,
-      }),
-    [],
-  )
-  useEffect(() => () => material.dispose(), [material])
-  useEffect(() => () => picksMaterial.dispose(), [picksMaterial])
-
-  // Both meshes share the insert's offset — they come out of OpenSCAD in the
+  // Every mesh shares the tray's offset — they come out of OpenSCAD in the
   // same coordinates, and centring them separately would pull them apart.
   const offset = useMemo(
     () =>
@@ -124,13 +111,37 @@ function Insert({
   return (
     <group rotation={[-Math.PI / 2, 0, 0]}>
       <group position={offset}>
-        <mesh geometry={geometry} material={material} castShadow receiveShadow />
-        {picksGeometry ? (
-          <mesh
-            geometry={picksGeometry}
-            material={picksMaterial}
-            renderOrder={1}
+        <mesh geometry={trayGeometry} castShadow receiveShadow>
+          <meshStandardMaterial
+            color={colors.tray}
+            metalness={0.05}
+            roughness={0.45}
+            flatShading
           />
+        </mesh>
+        {combGeometry ? (
+          <mesh geometry={combGeometry} castShadow receiveShadow>
+            <meshStandardMaterial
+              color={colors.comb}
+              metalness={0.05}
+              roughness={0.45}
+              flatShading
+            />
+          </mesh>
+        ) : null}
+        {/* See-through, so it stays obvious that the picks are not the print. */}
+        {picksGeometry ? (
+          <mesh geometry={picksGeometry} renderOrder={1}>
+            <meshStandardMaterial
+              color={colors.picks}
+              metalness={0}
+              roughness={0.35}
+              flatShading
+              transparent
+              opacity={0.45}
+              depthWrite={false}
+            />
+          </mesh>
         ) : null}
       </group>
     </group>
@@ -138,24 +149,30 @@ function Insert({
 }
 
 function Scene({
-  geometry,
+  trayGeometry,
+  combGeometry,
   picksGeometry,
   bounds,
+  colors,
 }: {
-  geometry: THREE.BufferGeometry | null
+  trayGeometry: THREE.BufferGeometry | null
+  combGeometry: THREE.BufferGeometry | null
   picksGeometry: THREE.BufferGeometry | null
   bounds: Bounds | null
+  colors: PartColors
 }) {
   return (
     <>
       <ambientLight intensity={0.55} />
       <directionalLight position={[10, 18, 14]} intensity={1.05} />
       <directionalLight position={[-12, -6, -10]} intensity={0.35} />
-      {geometry && bounds ? (
+      {trayGeometry && bounds ? (
         <Insert
-          geometry={geometry}
+          trayGeometry={trayGeometry}
+          combGeometry={combGeometry}
           picksGeometry={picksGeometry}
           bounds={bounds}
+          colors={colors}
         />
       ) : null}
       <FitCamera bounds={bounds} />
@@ -165,13 +182,16 @@ function Scene({
 }
 
 export function StlViewer({ className }: { className?: string }) {
-  const stl = useSelector(designStore, (s) => s.render.stl)
+  const trayStl = useSelector(designStore, (s) => s.render.trayStl)
+  const combStl = useSelector(designStore, (s) => s.render.combStl)
   const picksStl = useSelector(designStore, (s) => s.render.picksStl)
-  const geometry = useStlGeometry(stl)
+  const colors = useSelector(designStore, (s) => s.colors)
+  const trayGeometry = useStlGeometry(trayStl)
+  const combGeometry = useStlGeometry(combStl)
   const picksGeometry = useStlGeometry(picksStl)
   const bounds = useMemo(
-    () => (geometry ? computeBounds(geometry) : null),
-    [geometry],
+    () => (trayGeometry ? computeBounds(trayGeometry) : null),
+    [trayGeometry],
   )
 
   return (
@@ -183,9 +203,11 @@ export function StlViewer({ className }: { className?: string }) {
         style={{ width: '100%', height: '100%' }}
       >
         <Scene
-          geometry={geometry}
+          trayGeometry={trayGeometry}
+          combGeometry={combGeometry}
           picksGeometry={picksGeometry}
           bounds={bounds}
+          colors={colors}
         />
       </Canvas>
     </div>

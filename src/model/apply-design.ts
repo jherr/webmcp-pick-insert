@@ -23,7 +23,7 @@ export function applyDesignToSource(
   options: {
     slots: Slot[]
     previewPicks: boolean
-    /** One half of a two-colour print, or the whole insert (the default). */
+    /** One half of a two-color print, or the whole insert (the default). */
     part?: ModelPart
   },
 ): string {

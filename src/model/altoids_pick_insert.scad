@@ -17,7 +17,7 @@
 //
 // Export:  openscad -o insert.stl --export-format binstl altoids_pick_insert.scad
 //
-// Two colours: `part` cuts the insert into the slotted comb and the tray that
+// Two colors: `part` cuts the insert into the slotted comb and the tray that
 // surrounds it. The two share coincident faces and no volume, so their union is
 // exactly the one-piece insert, and a slicer can hand each one its own
 // filament. Either render them one at a time —
@@ -100,13 +100,13 @@ thumb_scallop = true;   // dish in the front wall to lift the insert out
 scallop_radius = 10;
 scallop_depth = 5;
 
-/* [Two-colour export] */
+/* [Two-color export] */
 // "all" is the one-piece insert. "tray" and "comb" are the two halves of a
-// two-colour print, one at a time. "split" draws both as separate top-level
+// two-color print, one at a time. "split" draws both as separate top-level
 // objects, which only means anything under --enable=lazy-union.
 part = "all";           // ["all", "tray", "comb", "split"]
-tray_colour = "#2a5f7a";
-comb_colour = "#c8442a";
+tray_color = "#2a5f7a";
+comb_color = "#c8442a";
 
 /* [Preview] */
 // Both of these are for looking at, not for exporting: neither has any
@@ -114,6 +114,7 @@ comb_colour = "#c8442a";
 preview_picks = false;  // draw the picks on their own, without the insert
 preview_box = false;    // the tin around the insert, drawn 1 mm thick
 box_wall = 1.0;
+pick_color = "#ffb35c";
 
 /* [Hidden] */
 $fn = 96;
@@ -408,7 +409,7 @@ module cavity() {
             footprint(wall);
 }
 
-// The two halves of a two-colour print. The tray is the shell exactly as the
+// The two halves of a two-color print. The tray is the shell exactly as the
 // one-piece insert has it, floor and wall unbroken; the comb is only what
 // stands above that floor and inside that wall. They meet on coincident faces
 // and share no volume, so together they are the insert.
@@ -454,10 +455,10 @@ module tin() {
 
 // The picks are a render of their own rather than something added to the
 // insert: exported on their own they can be overlaid on the insert in a
-// different colour, and the insert render stays printable no matter what.
+// different color, and the insert render stays printable no matter what.
 if (preview_picks) {
     for (i = [0 : n - 1])
-        pick(i);
+        color(pick_color) pick(i);
 } else if (part == "tray") {
     tray_part();
 } else if (part == "comb") {
@@ -465,8 +466,8 @@ if (preview_picks) {
 } else if (part == "split") {
     // Two top-level children, so lazy-union can keep them apart all the way
     // into the 3MF. Anything that wraps them in a union() collapses them.
-    color(tray_colour) tray_part();
-    color(comb_colour) comb_part();
+    color(tray_color) tray_part();
+    color(comb_color) comb_part();
 } else {
     union() {
         insert();

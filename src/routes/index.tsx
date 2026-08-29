@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { startRenderController } from '@/store/render-controller'
 import { StlViewer } from '@/viewer/StlViewer'
 import { SlotList } from '@/ui/SlotList'
+import { ColorControls } from '@/ui/ColorControls'
 import { PreviewActions } from '@/ui/PreviewActions'
 import { registerWebMcpTools } from '@/mcp/register'
 
@@ -16,11 +17,12 @@ function App() {
 
   return (
     <main className="grid h-screen w-screen grid-cols-[460px_1fr] bg-(--bg-base)">
-      <aside className="flex min-h-0 flex-col border-r border-(--line)">
+      <aside className="relative z-20 flex min-h-0 flex-col border-r border-(--line)">
         <h1 className="shrink-0 px-4 pt-4 text-lg font-semibold tracking-tight text-(--sea-ink)">
           Altoids Pick Insert
         </h1>
         <SlotList className="min-h-0 flex-1 overflow-y-auto p-4" />
+        <ColorControls className="shrink-0 border-t border-(--line) p-4" />
       </aside>
 
       <div className="flex min-h-0 flex-col">

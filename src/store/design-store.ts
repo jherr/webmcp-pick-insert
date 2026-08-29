@@ -1,12 +1,21 @@
 /**
  * Design store — single source of truth for the Altoids pick insert.
  *
- * The SCAD model is a fixed bundled asset. The only editable state is the
- * list of slots (pick shape + thickness). Everything the UI, the render
- * controller, and the MCP tools touch lives here.
+ * The SCAD model is a fixed bundled asset. The editable state is the list of
+ * slots (pick shape + thickness) and the three part colors. Everything the
+ * UI, the render controller, and the MCP tools touch lives here.
  */
 import { Store } from '@tanstack/store'
 import type { FitReport } from '@/model/fit-report'
+import {
+  DEFAULT_COLORS,
+  cloneColors,
+  isColorPart,
+  parseHexColor,
+  summarizeColors,
+  type ColorPart,
+  type PartColors,
+} from '@/model/colors'
 import {
   DEFAULT_SLOTS,
   DEFAULT_THICKNESS,
@@ -24,19 +33,28 @@ export type Slot = {
 
 export type RenderStatus = 'idle' | 'pending' | 'success' | 'error'
 
+/**
+ * The meshes on screen: one pass per part, so each can carry its own color.
+ *
+ * Tray and comb together are exactly the one-piece insert — they share
+ * coincident faces and no volume. The printable single-mesh STL is not here:
+ * it is rendered on demand at export time, the way the 3MF is.
+ */
 export type RenderState = {
   status: RenderStatus
   requestId: string | null
-  /** The insert, always rendered without preview geometry — the printable STL. */
-  stl: Uint8Array | null
-  /** The picks alone, from a second pass; null unless previewing picks. */
+  /** The shell: floor and walls, slots cut. */
+  trayStl: Uint8Array | null
+  /** The slotted band standing on that floor. */
+  combStl: Uint8Array | null
+  /** The picks alone; null when the overlay pass failed. */
   picksStl: Uint8Array | null
   error: string | null
   stderr: string
   renderMs: number | null
 }
 
-export type HistoryKind = 'slot' | 'render' | 'export' | 'load'
+export type HistoryKind = 'slot' | 'color' | 'render' | 'export' | 'load'
 
 export type HistoryEntry = {
   ts: number
@@ -46,6 +64,7 @@ export type HistoryEntry = {
 
 export type DesignState = {
   slots: Slot[]
+  colors: PartColors
   projectName: string
   render: RenderState
   history: HistoryEntry[]
@@ -60,11 +79,13 @@ function cloneSlots(slots: Slot[]): Slot[] {
 
 const initialState: DesignState = {
   slots: cloneSlots(DEFAULT_SLOTS),
+  colors: cloneColors(DEFAULT_COLORS),
   projectName: 'altoids-pick-insert',
   render: {
     status: 'idle',
     requestId: null,
-    stl: null,
+    trayStl: null,
+    combStl: null,
     picksStl: null,
     error: null,
     stderr: '',
@@ -214,12 +235,63 @@ export const designActions = {
         {
           ...state,
           slots: cloneSlots(DEFAULT_SLOTS),
+          colors: cloneColors(DEFAULT_COLORS),
           fit: null,
         },
         {
           ts: Date.now(),
           kind: 'slot',
           summary: 'reset design to defaults',
+        },
+      ),
+    )
+  },
+
+  setColor(part: ColorPart, value: string) {
+    designActions.setColors({ [part]: value } as Partial<PartColors>)
+  },
+
+  /**
+   * Set one or more part colors. Anything that is not a hex color is
+   * ignored rather than rejected: a swatch drag fires continuously, and a
+   * half-typed `#a` should leave the design alone, not error.
+   */
+  setColors(patch: Partial<PartColors>) {
+    const next: Partial<PartColors> = {}
+    for (const [part, value] of Object.entries(patch)) {
+      if (!isColorPart(part)) continue
+      const hex = parseHexColor(value)
+      if (hex) next[part] = hex
+    }
+    if (Object.keys(next).length === 0) return
+
+    designStore.setState((state) => {
+      const colors = { ...state.colors, ...next }
+      const changed = (Object.keys(next) as ColorPart[]).filter(
+        (part) => colors[part] !== state.colors[part],
+      )
+      if (changed.length === 0) return state
+      return appendHistory(
+        { ...state, colors },
+        {
+          ts: Date.now(),
+          kind: 'color',
+          summary: changed
+            .map((part) => `${part} color ${colors[part]}`)
+            .join(', '),
+        },
+      )
+    })
+  },
+
+  resetColors() {
+    designStore.setState((state) =>
+      appendHistory(
+        { ...state, colors: cloneColors(DEFAULT_COLORS) },
+        {
+          ts: Date.now(),
+          kind: 'color',
+          summary: `reset colors to ${summarizeColors(DEFAULT_COLORS)}`,
         },
       ),
     )
@@ -255,7 +327,8 @@ export const designActions = {
 
   setRenderResult(input: {
     requestId: string
-    stl: Uint8Array
+    trayStl: Uint8Array
+    combStl: Uint8Array
     picksStl: Uint8Array | null
     renderMs: number
     stderr: string
@@ -268,17 +341,19 @@ export const designActions = {
         render: {
           status: 'success',
           requestId: input.requestId,
-          stl: input.stl,
+          trayStl: input.trayStl,
+          combStl: input.combStl,
           picksStl: input.picksStl,
           error: null,
           stderr: input.stderr,
           renderMs: input.renderMs,
         },
       }
+      const bytes = input.trayStl.byteLength + input.combStl.byteLength
       return appendHistory(next, {
         ts: Date.now(),
         kind: 'render',
-        summary: `render ok in ${input.renderMs.toFixed(0)}ms (${input.stl.byteLength} bytes)`,
+        summary: `render ok in ${input.renderMs.toFixed(0)}ms (${bytes} bytes)`,
       })
     })
   },
@@ -296,7 +371,8 @@ export const designActions = {
         render: {
           status: 'error',
           requestId: input.requestId,
-          stl: null,
+          trayStl: null,
+          combStl: null,
           picksStl: null,
           error: input.message,
           stderr: input.stderr,
