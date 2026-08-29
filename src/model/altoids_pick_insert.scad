@@ -34,12 +34,12 @@
 include <pick_profiles.scad>
 
 /* [Tin] */
-tin_width = 95;         // interior length of the tin (mr moxeys)
-tin_depth = 58;         // interior depth of the tin (mr moxeys)
-corner_radius = 13;     // corner radius of the tin interior (mr moxeys)
-// tin_width = 90;         // interior length of the tin
-// tin_depth = 56;         // interior depth of the tin
-// corner_radius = 11;     // corner radius of the tin interior
+//tin_width = 95;         // interior length of the tin (mr moxeys)
+//tin_depth = 58;         // interior depth of the tin (mr moxeys)
+//corner_radius = 13;     // corner radius of the tin interior (mr moxeys)
+tin_width = 90;         // interior length of the tin
+tin_depth = 56;         // interior depth of the tin
+corner_radius = 11;     // corner radius of the tin interior
 tin_height = 21;        // interior height with the lid closed
 fit_clearance = 0.3;    // total slop so the insert drops in without force
 
