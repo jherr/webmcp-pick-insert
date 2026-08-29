@@ -16,6 +16,17 @@
 // tallest pick in the slot list needs and says so.
 //
 // Export:  openscad -o insert.stl --export-format binstl altoids_pick_insert.scad
+//
+// Two colours: `part` cuts the insert into the slotted comb and the tray that
+// surrounds it. The two share coincident faces and no volume, so their union is
+// exactly the one-piece insert, and a slicer can hand each one its own
+// filament. Either render them one at a time —
+//          openscad -o comb.off -D 'part="comb"' altoids_pick_insert.scad
+// which is what the web app does before assembling the 3MF itself, or let
+// OpenSCAD write both into one 3MF —
+//          openscad -o insert.3mf --enable=lazy-union -D 'part="split"' \
+//              altoids_pick_insert.scad
+// which needs a desktop build: the WASM builds have no 3MF exporter.
 // Preview: preview_picks renders the picks *instead of* the insert, so the two
 //          can be rendered separately and overlaid; preview_box adds the tin.
 // Outlines come from the pick SVGs via tools/svg_to_profile.py.
@@ -23,12 +34,13 @@
 include <pick_profiles.scad>
 
 /* [Tin] */
-// tin_width = 95;         // interior length of the tin (mr moxeys)
-// tin_depth = 58;         // interior depth of the tin (mr moxeys)
-tin_width = 90;         // interior length of the tin
-tin_depth = 56;         // interior depth of the tin
+tin_width = 95;         // interior length of the tin (mr moxeys)
+tin_depth = 58;         // interior depth of the tin (mr moxeys)
+corner_radius = 13;     // corner radius of the tin interior (mr moxeys)
+// tin_width = 90;         // interior length of the tin
+// tin_depth = 56;         // interior depth of the tin
+// corner_radius = 11;     // corner radius of the tin interior
 tin_height = 21;        // interior height with the lid closed
-corner_radius = 11;     // corner radius of the tin interior
 fit_clearance = 0.3;    // total slop so the insert drops in without force
 
 /* [Pick types] */
@@ -87,6 +99,14 @@ centre_width = 20;      // how wide the trough opens at the comb top
 thumb_scallop = true;   // dish in the front wall to lift the insert out
 scallop_radius = 10;
 scallop_depth = 5;
+
+/* [Two-colour export] */
+// "all" is the one-piece insert. "tray" and "comb" are the two halves of a
+// two-colour print, one at a time. "split" draws both as separate top-level
+// objects, which only means anything under --enable=lazy-union.
+part = "all";           // ["all", "tray", "comb", "split"]
+tray_colour = "#2a5f7a";
+comb_colour = "#c8442a";
 
 /* [Preview] */
 // Both of these are for looking at, not for exporting: neither has any
@@ -218,6 +238,8 @@ assert(comb_height > base + 3 && comb_height < insert_height, "comb_height out o
 assert(centre_dip <= centre_width / 2,
        "a trough deeper than half its width undercuts itself and will not print");
 assert(!trough || trough_z > base + 3, "the centre trough eats too far into the comb");
+assert(len([for (p = ["all", "tray", "comb", "split"]) if (p == part) p]) == 1,
+       str("part has to be all, tray, comb or split, not ", part));
 
 // ------------------------------------------------------------------ shapes ---
 
@@ -367,16 +389,53 @@ module shell() {
     }
 }
 
+// Everything taken out of the insert, whichever part it is taken out of.
+module cutters() {
+    for (i = [0 : n - 1]) slot(i);
+    if (thumb_scallop)
+        translate([0, -d / 2, insert_height + scallop_radius - scallop_depth])
+            sphere(r = scallop_radius);
+}
+
+// The open volume inside the tray: everything above the floor and inside the
+// wall. The comb is clipped to this rather than having the shell subtracted
+// from it, which comes to the same solid without asking Manifold to cancel the
+// two identical outer arcs — that leaves four zero-volume slivers in the
+// rounded corners, and a slicer is entitled to choke on them.
+module cavity() {
+    translate([0, 0, base])
+        linear_extrude(insert_height)
+            footprint(wall);
+}
+
+// The two halves of a two-colour print. The tray is the shell exactly as the
+// one-piece insert has it, floor and wall unbroken; the comb is only what
+// stands above that floor and inside that wall. They meet on coincident faces
+// and share no volume, so together they are the insert.
+module tray_part() {
+    difference() {
+        shell();
+        cutters();
+    }
+}
+
+module comb_part() {
+    difference() {
+        intersection() {
+            comb();
+            cavity();
+        }
+        cutters();
+    }
+}
+
 module insert() {
     difference() {
         union() {
             shell();
             comb();
         }
-        for (i = [0 : n - 1]) slot(i);
-        if (thumb_scallop)
-            translate([0, -d / 2, insert_height + scallop_radius - scallop_depth])
-                sphere(r = scallop_radius);
+        cutters();
     }
 }
 
@@ -399,6 +458,15 @@ module tin() {
 if (preview_picks) {
     for (i = [0 : n - 1])
         pick(i);
+} else if (part == "tray") {
+    tray_part();
+} else if (part == "comb") {
+    comb_part();
+} else if (part == "split") {
+    // Two top-level children, so lazy-union can keep them apart all the way
+    // into the 3MF. Anything that wraps them in a union() collapses them.
+    color(tray_colour) tray_part();
+    color(comb_colour) comb_part();
 } else {
     union() {
         insert();

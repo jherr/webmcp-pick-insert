@@ -2,7 +2,8 @@
 
 Design a slanted guitar-pick comb that drops into a classic Altoids tin.
 Built as a TanStack Start app with OpenSCAD WASM rendering and a WebMCP
-tool surface so an agent can edit the slot list, render, and export an STL.
+tool surface so an agent can edit the slot list, render, and export an
+STL or a two-filament 3MF.
 
 ## What you configure
 
@@ -23,6 +24,31 @@ assert messages surface as a friendly “Does not fit” banner.
 Optional preview toggles draw translucent picks and the tin outline in
 the 3D view. **Export STL** always re-renders with those flags off so
 the file is printable.
+
+## Two-filament export
+
+**Export 3MF** writes the insert as two parts rather than one solid: the
+slotted **comb** down the middle, and the **tray** that surrounds it —
+floor, wall, and thumb scallop. They share coincident faces and no
+volume, so their union is exactly the one-piece STL; the point is only
+that a slicer can hand each one a different filament.
+
+On opening the file, PrusaSlicer / Orca / Bambu Studio will ask whether
+to load it as a single object with multiple parts. Say yes, then assign
+a filament per part.
+
+The 3MF is assembled by the app ([`src/model/three-mf.ts`](src/model/three-mf.ts)),
+not by OpenSCAD: the WASM builds are compiled without the 3MF exporter,
+and answer a request for one with `Export to 3MF format was not enabled
+when building the application`, exit code 0, and a zero-byte file. So
+each part is rendered to OFF — an indexed mesh, unlike STL — and the two
+are packed into one 3MF with a base material each. A desktop OpenSCAD
+can do it in one shot instead:
+
+```bash
+openscad -o insert.3mf --enable=lazy-union -D 'part="split"' \
+    src/model/altoids_pick_insert.scad
+```
 
 ## Run it
 
@@ -47,6 +73,7 @@ Registered on `navigator.modelContext` via `@mcp-b/global`:
 | `set_all_thickness` / `reset_design` | Bulk edits |
 | `render` / `get_render_status` | Force render / read status + fit |
 | `export_stl` | Base64 STL (preview geometry off) |
+| `export_3mf` | Base64 two-part 3MF (comb + tray) |
 | `get_project_name` / `set_project_name` | Export filename |
 | `get_history` | Recent actions |
 
@@ -72,5 +99,7 @@ Claude Desktop / Cursor at that stdio server as documented by MCP-B.
 - [`src/model/pick_profiles.scad`](src/model/pick_profiles.scad) — normalized pick outlines
 
 The worker writes both into its virtual filesystem so
-`include <pick_profiles.scad>` resolves. The `slots` array is overridden
-with a single `-D` flag; the SCAD source is never mutated.
+`include <pick_profiles.scad>` resolves. The bundled source is a fixed
+asset; each render rewrites the `slots` array, `preview_picks`, and
+`part` into a copy of it ([`src/model/apply-design.ts`](src/model/apply-design.ts)),
+because `-D` is unreliable for nested string/number lists.

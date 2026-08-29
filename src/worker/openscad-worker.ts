@@ -136,7 +136,7 @@ async function handleRender(req: Extract<WorkerRequest, { type: 'render' }>) {
 
   const fs = openscad.FS
   const inputPath = '/input.scad'
-  const ext = req.format === 'stl' ? 'stl' : req.format === 'off' ? 'off' : 'svg'
+  const ext = req.format
   const outputPath = `/output.${ext}`
 
   try {

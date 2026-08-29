@@ -10,7 +10,7 @@ import {
   sanitizeProjectFileName,
   summarizeSlots as summarizeSlotsText,
 } from '@/store/design-store'
-import { renderNow } from '@/store/render-controller'
+import { renderNow, renderThreeMf } from '@/store/render-controller'
 import {
   MAX_SLOTS,
   MAX_THICKNESS,
@@ -366,6 +366,56 @@ const export_stl: ToolDefinition = {
   },
 }
 
+const export_3mf: ToolDefinition = {
+  name: 'export_3mf',
+  description:
+    'Return the two-colour 3MF as base64: the slotted comb and the surrounding tray as two separate objects in one file, so a slicer can print each in a different filament. Rendered fresh on every call.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      truncateBase64: {
+        type: 'integer',
+        description: 'If set, only return this many base64 characters',
+        minimum: 0,
+      },
+    },
+    additionalProperties: false,
+  },
+  async execute(args) {
+    const a = asObject(args)
+    const outcome = await renderThreeMf()
+    if (!outcome.ok) {
+      return err(
+        outcome.message === 'superseded'
+          ? '3MF export render was superseded'
+          : outcome.message,
+      )
+    }
+    const projectName =
+      designStore.state.projectName || 'altoids-pick-insert'
+    const fileName = `${sanitizeProjectFileName(projectName)}.3mf`
+    let base64 = bytesToBase64(outcome.bytes)
+    const truncated =
+      typeof a.truncateBase64 === 'number' && a.truncateBase64 >= 0
+    if (truncated) {
+      base64 = base64.slice(0, a.truncateBase64 as number)
+    }
+    designActions.pushHistory({
+      kind: 'export',
+      summary: `exported ${fileName} (${outcome.bytes.byteLength} bytes, comb + tray)`,
+    })
+    return ok({
+      ok: true,
+      fileName,
+      byteLength: outcome.bytes.byteLength,
+      objects: ['tray (floor, wall, thumb scallop)', 'comb (slotted centre)'],
+      base64,
+      truncated,
+      slots: summarizeSlotsText(designStore.state.slots),
+    })
+  },
+}
+
 const get_project_name: ToolDefinition = {
   name: 'get_project_name',
   description: 'Read the project name and the sanitized STL filename.',
@@ -442,6 +492,7 @@ export const tools: ToolDefinition[] = [
   render,
   get_render_status,
   export_stl,
+  export_3mf,
   get_project_name,
   set_project_name,
   get_history,

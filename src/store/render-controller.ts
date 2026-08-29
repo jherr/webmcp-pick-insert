@@ -14,6 +14,8 @@
  * instead of the insert, so the two come back as separate meshes the viewer
  * overlays. The upshot is that the first pass is always preview-free, which
  * means the STL on hand is always the printable one.
+ *
+ * `renderThreeMf()` is a pass of its own, on demand, for the two-colour 3MF.
  */
 import {
   designActions,
@@ -22,11 +24,13 @@ import {
   type Slot,
 } from './design-store'
 import { MODEL_INCLUDES, MODEL_MAIN } from '@/model/model-source'
-import { applyDesignToSource } from '@/model/apply-design'
+import { applyDesignToSource, type ModelPart } from '@/model/apply-design'
 import {
   friendlyRenderError,
   parseFitReport,
 } from '@/model/fit-report'
+import { meshVolume, parseOff } from '@/model/off-mesh'
+import { buildThreeMf, type ThreeMfPart } from '@/model/three-mf'
 import { getOpenScadClient } from '@/worker/worker-client'
 import type { RenderOutcome } from '@/worker/worker-client'
 
@@ -67,6 +71,70 @@ function renderPass(
     includes: MODEL_INCLUDES,
     params: {},
   })
+}
+
+export type ThreeMfOutcome =
+  | { ok: true; bytes: Uint8Array; renderMs: number; parts: string[] }
+  | { ok: false; message: string }
+
+/** Which part gets which filament, and what the slicer will call them. */
+const THREE_MF_PARTS: { part: ModelPart; name: string; colour: string }[] = [
+  { part: 'tray', name: 'Tray', colour: '#2a5f7a' },
+  { part: 'comb', name: 'Comb', colour: '#c8442a' },
+]
+
+/**
+ * Render the two-colour 3MF: the tray and the comb as two parts of one object.
+ *
+ * A pass per part, and OFF rather than STL, because the 3MF is assembled here
+ * rather than by OpenSCAD — see `@/model/three-mf` for why. Nothing is stored:
+ * `render.stl` stays the single-piece insert the viewer is showing.
+ */
+export async function renderThreeMf(
+  slots: Slot[] = designStore.state.slots,
+): Promise<ThreeMfOutcome> {
+  const meshes: ThreeMfPart[] = []
+  let renderMs = 0
+
+  for (const { part, name, colour } of THREE_MF_PARTS) {
+    const source = applyDesignToSource(MODEL_MAIN, {
+      slots,
+      previewPicks: false,
+      part,
+    })
+    const outcome = await getOpenScadClient().render({
+      source,
+      includes: MODEL_INCLUDES,
+      params: {},
+      format: 'off',
+    })
+    if (!outcome.ok) {
+      return {
+        ok: false,
+        message: outcome.aborted
+          ? 'superseded'
+          : `${part}: ${friendlyRenderError(outcome.message, outcome.stderr)}`,
+      }
+    }
+    renderMs += outcome.renderMs
+
+    const mesh = parseOff(new TextDecoder().decode(outcome.bytes))
+    // A part inside out, or open, would slice into nonsense. Cheap to notice
+    // here, expensive to notice on the printer.
+    if (meshVolume(mesh) <= 0) {
+      return {
+        ok: false,
+        message: `${part} came back inside out or unclosed`,
+      }
+    }
+    meshes.push({ name, colour, mesh })
+  }
+
+  const bytes = await buildThreeMf(
+    meshes,
+    designStore.state.projectName || 'altoids-pick-insert',
+  )
+  return { ok: true, bytes, renderMs, parts: meshes.map((m) => m.name) }
 }
 
 async function performRender(): Promise<RenderOutcomeSummary> {

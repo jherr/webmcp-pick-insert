@@ -15,11 +15,16 @@ export function formatSlotsBlock(slots: Slot[]): string {
   return `slots = [\n${lines.join('\n')}\n];`
 }
 
+/** Which piece of the insert to render; `all` is the one-piece insert. */
+export type ModelPart = 'all' | 'tray' | 'comb'
+
 export function applyDesignToSource(
   source: string,
   options: {
     slots: Slot[]
     previewPicks: boolean
+    /** One half of a two-colour print, or the whole insert (the default). */
+    part?: ModelPart
   },
 ): string {
   let out = source
@@ -32,6 +37,7 @@ export function applyDesignToSource(
   out = out.replace(slotsRe, slotsBlock)
 
   out = replaceBool(out, 'preview_picks', options.previewPicks)
+  out = replaceString(out, 'part', options.part ?? 'all')
 
   return out
 }
@@ -42,4 +48,12 @@ function replaceBool(source: string, name: string, value: boolean): string {
     throw new Error(`could not find ${name} assignment in model source`)
   }
   return source.replace(re, `${name} = ${value};`)
+}
+
+function replaceString(source: string, name: string, value: string): string {
+  const re = new RegExp(`^${name}\\s*=\\s*"[^"]*"\\s*;`, 'm')
+  if (!re.test(source)) {
+    throw new Error(`could not find ${name} assignment in model source`)
+  }
+  return source.replace(re, `${name} = "${value}";`)
 }
